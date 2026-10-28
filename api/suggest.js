@@ -5,6 +5,7 @@ module.exports = async function handler(req, res) {
 
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
+    console.error("GEMINI_API_KEY is missing");
     return res.status(500).json({ error: "missing_api_key" });
   }
 
@@ -61,6 +62,8 @@ module.exports = async function handler(req, res) {
     const parsed = JSON.parse(text);
     return res.status(200).json(parsed);
   } catch (e) {
-    return res.status(500).json({ error: "server_error" });
+  console.error("suggest error:", e);
+    return res.status(500).json({ error: "server_error", detail: String(e) });
+
   }
 };
