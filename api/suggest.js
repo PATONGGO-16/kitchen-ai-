@@ -62,7 +62,7 @@ module.exports = async function handler(req, res) {
     const parsed = JSON.parse(text);
     return res.status(200).json(parsed);
   } catch (e) {
-  console.error("suggest error:", e);
+    console.error("suggest error:", e);
     return res.status(500).json({ error: "server_error", detail: String(e) });
 
   }
