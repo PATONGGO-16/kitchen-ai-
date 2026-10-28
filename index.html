@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ครัวอัจฉริยะ: AI แนะนำเมนูจากวัตถุดิบ เมนูโคราช</title>
+<meta name="description" content="ใส่วัตถุดิบที่มี แล้วให้ AI แนะนำเมนูอาหาร พร้อมเมนูพื้นถิ่นโคราชอย่างแกงบวน ผัดหมี่โคราช">
+<meta property="og:title" content="ครัวอัจฉริยะ: AI แนะนำเมนูจากวัตถุดิบ">
+<meta property="og:description" content="ใส่วัตถุดิบที่มี แล้วให้ AI แนะนำเมนู พร้อมเมนูโคราช">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🍲%3C/text%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fff8ec;--card:#ffffff;--ink:#3a2a1a;--muted:#8a7560;--accent:#ff7a3d;--accent2:#ffd166;--line:#f1e1c8;--chip:#fff0d6;--green:#2f9e6b}
+@media (prefers-color-scheme:dark){:root{--bg:#1d1812;--card:#2a2219;--ink:#f6e9d6;--muted:#b8a58c;--accent:#ff9159;--accent2:#e3b84f;--line:#40352a;--chip:#3a2e20;--green:#5fd09a;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans Thai",system-ui,sans-serif;line-height:1.6}
+main{max-width:640px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:1.6rem;margin:8px 0 2px}
+.sub{color:var(--muted);margin:0 0 18px;font-size:.95rem}
+.box{background:var(--card);border:2px solid var(--line);border-radius:20px;padding:16px}
+label{font-weight:600;display:block;margin-bottom:8px}
+.row{display:flex;gap:8px}
+input{flex:1;min-width:0;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:14px;padding:10px 14px}
+input:focus{outline:none;border-color:var(--accent)}
+button{font:inherit;cursor:pointer;border:0;border-radius:14px}
+.add{background:var(--accent2);color:#3a2a1a;font-weight:700;padding:0 18px}
+.tags{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;min-height:8px}
+.tag{background:var(--chip);border-radius:999px;padding:4px 6px 4px 14px;display:flex;align-items:center;gap:6px}
+.tag button{background:var(--line);color:var(--ink);width:24px;height:24px;border-radius:50%;line-height:1;padding:0}
+.quick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.quick button{background:transparent;border:1.5px dashed var(--line);color:var(--muted);padding:3px 12px;border-radius:999px;font-size:.88rem}
+.go{width:100%;background:var(--accent);color:#fff;font-weight:700;font-size:1.05rem;padding:13px}
+.go:disabled{opacity:.5;cursor:not-allowed}
+#out{margin-top:20px;display:grid;gap:14px}
+.dish{background:var(--card);border:2px solid var(--line);border-radius:20px;padding:16px}
+.dish h2{margin:0 0 4px;font-size:1.25rem}
+.badge{display:inline-block;background:var(--green);color:#fff;font-size:.78rem;font-weight:700;padding:1px 10px;border-radius:999px;margin-left:6px;vertical-align:middle}
+.why{color:var(--muted);margin:0 0 10px}
+.dish h3{font-size:.95rem;margin:10px 0 4px}
+.dish ol{margin:0;padding-left:22px}
+.pill{display:inline-block;background:var(--chip);border-radius:8px;padding:0 8px;margin:2px 4px 2px 0;font-size:.9rem}
+.msg{text-align:center;color:var(--muted);padding:12px}
+.err{color:#d6453d}
+footer{text-align:center;color:var(--muted);font-size:.82rem;margin-top:28px}
+</style>
+</head>
+<body>
+<main>
+  <h1>🍲 ครัวอัจฉริยะ</h1>
+  <p class="sub">ใส่วัตถุดิบที่มี แล้วให้ AI แนะนำเมนู (เมนูโคราชมีป้ายพิเศษ)</p>
+
+  <div class="box">
+    <label for="ing">วัตถุดิบที่มีอยู่</label>
+    <div class="row">
+      <input id="ing" placeholder="เช่น ไข่ หมูสับ กะเพรา" autocomplete="off">
+      <button class="add" id="addBtn" type="button">เพิ่ม</button>
+    </div>
+    <div class="tags" id="tags"></div>
+    <div class="quick" id="quick"></div>
+    <button class="go" id="go" type="button" disabled>✨ ให้ AI แนะนำเมนู</button>
+  </div>
+
+  <div id="out"></div>
+  <footer>คำแนะนำสร้างโดย AI อาจมีความคลาดเคลื่อน ตรวจสอบวัตถุดิบและการแพ้อาหารก่อนทำจริง</footer>
+</main>
+
+<script>
+(function(){
+  var items = [];
+  var $ = function(id){ return document.getElementById(id); };
+  var quickList = ["หมู","ไก่","ไข่","ผักบุ้ง","หน่อไม้","เส้นหมี่","มะเขือเทศ","กะเพรา","พริก","ปลาร้า"];
+
+  function el(tag, cls, text){
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function renderTags(){
+    var box = $("tags");
+    box.textContent = "";
+    items.forEach(function(name, i){
+      var t = el("span","tag",name);
+      var x = el("button",null,"×");
+      x.type = "button";
+      x.setAttribute("aria-label","ลบ " + name);
+      x.onclick = function(){ items.splice(i,1); renderTags(); };
+      t.appendChild(x);
+      box.appendChild(t);
+    });
+    $("go").disabled = items.length === 0;
+  }
+
+  function addItem(v){
+    v = (v || "").trim();
+    if (!v) return;
+    v.split(/[,，\s]+/).forEach(function(p){
+      if (p && items.indexOf(p) < 0 && items.length < 20) items.push(p);
+    });
+    $("ing").value = "";
+    renderTags();
+  }
+
+  quickList.forEach(function(q){
+    var b = el("button",null,"+ " + q);
+    b.type = "button";
+    b.onclick = function(){ addItem(q); };
+    $("quick").appendChild(b);
+  });
+  $("addBtn").onclick = function(){ addItem($("ing").value); };
+  $("ing").addEventListener("keydown", function(e){
+    if (e.key === "Enter"){ e.preventDefault(); addItem($("ing").value); }
+  });
+
+  function list(tag, arr){
+    var l = el(tag);
+    (arr || []).forEach(function(s){ l.appendChild(el("li",null,String(s))); });
+    return l;
+  }
+  function pills(arr){
+    var d = el("div");
+    (arr || []).forEach(function(s){ d.appendChild(el("span","pill",String(s))); });
+    return d;
+  }
+
+  function showDishes(data){
+    var out = $("out");
+    out.textContent = "";
+    var dishes = (data && data.dishes) || [];
+    if (!dishes.length){ out.appendChild(el("div","msg","ยังไม่เจอเมนูที่เหมาะ ลองเพิ่มวัตถุดิบอีกนิดนะ")); return; }
+    dishes.slice(0,3).forEach(function(d){
+      var card = el("div","dish");
+      var h = el("h2",null,(d.emoji || "🍽️") + " " + (d.name || "เมนูลับ"));
+      if (d.korat) h.appendChild(el("span","badge","เมนูโคราช"));
+      card.appendChild(h);
+      card.appendChild(el("p","why",d.why || ""));
+      card.appendChild(el("h3",null,"ใช้วัตถุดิบของคุณ"));
+      card.appendChild(pills(d.ingredients_used));
+      if (d.extra && d.extra.length){
+        card.appendChild(el("h3",null,"ต้องเพิ่มอีกนิด"));
+        card.appendChild(pills(d.extra));
+      }
+      card.appendChild(el("h3",null,"วิธีทำย่อ"));
+      card.appendChild(list("ol", d.steps));
+      out.appendChild(card);
+    });
+  }
+
+  function showError(msg){
+    var out = $("out");
+    out.textContent = "";
+    out.appendChild(el("div","msg err",msg));
+  }
+
+  $("go").onclick = async function(){
+    var out = $("out");
+    var btn = $("go");
+    out.textContent = "";
+    out.appendChild(el("div","msg","AI กำลังคิดเมนูให้… 🍳"));
+    btn.disabled = true;
+    try{
+      var r = await fetch("/api/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: items })
+      });
+      if (!r.ok){
+        showError(r.status === 502 ? "ติดต่อ AI ไม่ได้ในตอนนี้ ลองใหม่อีกครั้งในสักครู่" : "เกิดข้อผิดพลาด ลองกดอีกครั้งนะ");
+        return;
+      }
+      showDishes(await r.json());
+    }catch(e){
+      showError("เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่นะ");
+    }finally{
+      btn.disabled = items.length === 0;
+    }
+  };
+
+  renderTags();
+})();
+</script>
+</body>
+</html>
