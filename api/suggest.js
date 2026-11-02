@@ -1,3 +1,16 @@
+async function callGemini(url, key, prompt, useSearch) {
+  const body = { contents: [{ parts: [{ text: prompt }] }] };
+  if (useSearch) body.tools = [{ google_search: {} }];
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": key
+    },
+    body: JSON.stringify(body)
+  });
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "method_not_allowed" });
@@ -22,7 +35,7 @@ module.exports = async function handler(req, res) {
   const prompt =
     "คุณคือเชฟผู้เชี่ยวชาญอาหารไทย โดยเฉพาะอาหารโคราช (เช่น แกงบวน ผัดหมี่โคราช ส้มตำโคราช ซุปหน่อไม้ ปลาร้าทรงเครื่อง)\n" +
     "วัตถุดิบที่ผู้ใช้มี: " + items.join(", ") + "\n" +
-    "ให้ค้นหาสูตรจากเว็บไซต์สูตรอาหารที่น่าเชื่อถือก่อนตอบ แล้วแนะนำ 3 เมนูที่ทำได้จริงจากวัตถุดิบเหล่านี้ (เพิ่มของพื้นฐานในครัวได้เล็กน้อย) " +
+    "แนะนำ 3 เมนูที่ทำได้จริงจากวัตถุดิบเหล่านี้ (เพิ่มของพื้นฐานในครัวได้เล็กน้อย) ถ้าค้นหาข้อมูลได้ให้อ้างอิงสูตรจากเว็บไซต์สูตรอาหารที่น่าเชื่อถือ " +
     "ถ้าวัตถุดิบเข้ากับอาหารโคราชได้ ให้ใส่เมนูโคราชอย่างน้อย 1 เมนูและตั้ง korat เป็น true\n" +
     "ทุกส่วนผสมและเครื่องปรุงต้องระบุปริมาณที่ใช้ทำจริง เป็นหน่วยในครัว เช่น กรัม ช้อนโต๊ะ ช้อนชา ต้น ฟอง กลีบ สำหรับจำนวนคนที่ระบุใน servings ห้ามเดาตัวเลขเกินจริง\n" +
     "ตอบเป็น JSON เท่านั้น ไม่มีคำอธิบายอื่น ไม่มี markdown รูปแบบ: " +
@@ -35,19 +48,15 @@ module.exports = async function handler(req, res) {
       encodeURIComponent(model) +
       ":generateContent";
 
-    const r = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": key
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ google_search: {} }]
-      })
-    });
-
+    let r = await callGemini(url, key, prompt, true);
     if (!r.ok) {
+      const t1 = await r.text();
+      console.error("with search failed:", r.status, t1.slice(0, 600));
+      r = await callGemini(url, key, prompt, false);
+    }
+    if (!r.ok) {
+      const t2 = await r.text();
+      console.error("without search failed:", r.status, t2.slice(0, 600));
       return res.status(502).json({ error: "upstream_error", status: r.status });
     }
 
@@ -59,7 +68,8 @@ module.exports = async function handler(req, res) {
     const e = text.lastIndexOf("}");
     const parsed = JSON.parse(text.slice(s, e + 1));
 
-    const chunks = (cand.groundingMetadata && cand.groundingMetadata.groundingChunks) || [];
+    const chunks =
+      (cand && cand.groundingMetadata && cand.groundingMetadata.groundingChunks) || [];
     const seen = {};
     const sources = [];
     chunks.forEach(function (c) {
@@ -76,6 +86,7 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json(parsed);
   } catch (err) {
+    console.error("server error:", String(err));
     return res.status(500).json({ error: "server_error" });
   }
 };
