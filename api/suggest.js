@@ -2,10 +2,8 @@ module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "method_not_allowed" });
   }
-
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
-    console.error("GEMINI_API_KEY is missing");
     return res.status(500).json({ error: "missing_api_key" });
   }
 
@@ -24,11 +22,12 @@ module.exports = async function handler(req, res) {
   const prompt =
     "คุณคือเชฟผู้เชี่ยวชาญอาหารไทย โดยเฉพาะอาหารโคราช (เช่น แกงบวน ผัดหมี่โคราช ส้มตำโคราช ซุปหน่อไม้ ปลาร้าทรงเครื่อง)\n" +
     "วัตถุดิบที่ผู้ใช้มี: " + items.join(", ") + "\n" +
-    "แนะนำ 3 เมนูที่ทำได้จริงจากวัตถุดิบเหล่านี้ (เพิ่มของพื้นฐานในครัวได้เล็กน้อย) " +
+    "ให้ค้นหาสูตรจากเว็บไซต์สูตรอาหารที่น่าเชื่อถือก่อนตอบ แล้วแนะนำ 3 เมนูที่ทำได้จริงจากวัตถุดิบเหล่านี้ (เพิ่มของพื้นฐานในครัวได้เล็กน้อย) " +
     "ถ้าวัตถุดิบเข้ากับอาหารโคราชได้ ให้ใส่เมนูโคราชอย่างน้อย 1 เมนูและตั้ง korat เป็น true\n" +
+    "ทุกส่วนผสมและเครื่องปรุงต้องระบุปริมาณที่ใช้ทำจริง เป็นหน่วยในครัว เช่น กรัม ช้อนโต๊ะ ช้อนชา ต้น ฟอง กลีบ สำหรับจำนวนคนที่ระบุใน servings ห้ามเดาตัวเลขเกินจริง\n" +
     "ตอบเป็น JSON เท่านั้น ไม่มีคำอธิบายอื่น ไม่มี markdown รูปแบบ: " +
-    '{"dishes":[{"name":"ชื่อเมนู","emoji":"อีโมจิ 1 ตัว","korat":true,"why":"เหตุผลสั้นๆ 1 ประโยค","ingredients_used":["..."],"extra":["..."],"steps":["ขั้นตอนสั้นๆ 3-5 ข้อ"]}]}' +
-    "\nเขียนเป็นภาษาไทย";
+    '{"dishes":[{"name":"ชื่อเมนูภาษาไทยที่ตรงกับชื่อที่ใช้ทั่วไป","emoji":"อีโมจิ 1 ตัว","korat":true,"servings":"สำหรับ 2 คน","why":"เหตุผลสั้นๆ 1 ประโยค","ingredients":[{"name":"หมูสับ","amount":"150 กรัม","have":true}],"seasonings":[{"name":"ซอสหอยนางรม","amount":"1 ช้อนโต๊ะ"}],"steps":["ขั้นตอนสั้นๆ 3-6 ข้อ"]}]}' +
+    "\nใน ingredients ให้ have เป็น true ถ้าเป็นของที่ผู้ใช้มีอยู่แล้ว และ false ถ้าต้องหาเพิ่ม เขียนเป็นภาษาไทย";
 
   try {
     const url =
@@ -44,7 +43,7 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json" }
+        tools: [{ google_search: {} }]
       })
     });
 
@@ -53,17 +52,32 @@ module.exports = async function handler(req, res) {
     }
 
     const data = await r.json();
-    const parts =
-      data && data.candidates && data.candidates[0] &&
-      data.candidates[0].content && data.candidates[0].content.parts;
-    let text = parts && parts[0] && parts[0].text ? parts[0].text : "";
-    text = text.replace(/```json|```/g, "").trim();
+    const cand = data && data.candidates && data.candidates[0];
+    const parts = (cand && cand.content && cand.content.parts) || [];
+    const text = parts.map(function (p) { return p.text || ""; }).join("");
+    const s = text.indexOf("{");
+    const e = text.lastIndexOf("}");
+    const parsed = JSON.parse(text.slice(s, e + 1));
 
-    const parsed = JSON.parse(text);
+    const chunks = (cand.groundingMetadata && cand.groundingMetadata.groundingChunks) || [];
+    const seen = {};
+    const sources = [];
+    chunks.forEach(function (c) {
+      const w = c.web;
+      if (w && w.uri) {
+        const t = w.title || "เว็บไซต์";
+        if (!seen[t]) {
+          seen[t] = 1;
+          sources.push({ title: t, uri: w.uri });
+        }
+      }
+    });
+    parsed.sources = sources.slice(0, 8);
+
     return res.status(200).json(parsed);
-  } catch (e) {
-    console.error("suggest error:", e);
-    return res.status(500).json({ error: "server_error", detail: String(e) });
-
+  } catch (err) {
+    return res.status(500).json({ error: "server_error" });
   }
 };
+
+module.exports.config = { maxDuration: 60 };
